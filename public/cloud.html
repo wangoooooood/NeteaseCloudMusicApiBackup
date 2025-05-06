@@ -15,11 +15,61 @@
   </div>
   <input id="file" type="file" multiple />
   <div id="app">
+    <div>
+      云盘总容量：{{maxSize}}
+    </div>
+    <div>
+      云盘已用容量：{{size}}
+    </div>
     <ul>
       <li v-for="(item,index) in songs" :key="index">
         {{item.songName}}
       </li>
     </ul>
+
+    <!-- 在云盘信息下方添加搜索框 -->
+    <div class="search-box">
+      <input
+        type="text"
+        v-model="searchQuery"
+        placeholder="输入歌手名称进行搜索"
+        class="search-input"
+      >
+      <span v-if="searchQuery" class="clear-btn" @click="searchQuery = ''">×</span>
+    </div>
+
+    <!-- 修改分类展示部分 -->
+    <template v-if="filteredSingerCount > 0">
+      <div v-for="(artists, category) in filteredSinger"
+           :key="category"
+           class="category-section">
+        <h3 class="category-title" @click="toggleCategory(category)">
+          {{ category }}（{{ artists.length }}位）
+        </h3>
+        <transition name="slide">
+          <div v-show="categoryStates[category]" class="artist-grid">
+            <div v-for="artist in artists"
+                 :key="artist.id"
+                 class="artist-card"
+                 @click="showArtistDetail(artist.id)">
+              <div class="card-header">
+                <span class="artist-name">{{ artist.name }}</span>
+                <span class="song-count">{{ artist.count }}首</span>
+              </div>
+              <div class="card-body">
+                <div class="size-info">
+                  <i class="icon-disk"></i>
+                  {{ artist.sizeDesc }}
+                </div>
+              </div>
+            </div>
+          </div>
+        </transition>
+      </div>
+    </template>
+    <div v-else class="empty-tips">
+      没有找到包含 "{{ searchQuery }}" 的歌手
+    </div>
   </div>
 
   <script src="https://fastly.jsdelivr.net/npm/axios@0.26.1/dist/axios.min.js"></script>
@@ -28,13 +78,67 @@
     const app = Vue.createApp({
       data() {
         return {
-          songs: []
+          searchQuery: '',
+          songs: [],
+          size:0,
+          maxSize:0,
+          categoryStates: {},
+          singer: {
+            "热门": [],
+            "华语男歌手": [],
+            "华语女歌手": [],
+            "华语组合": [],
+            "欧美男歌手": [],
+            "欧美女歌手": [],
+            "欧美组合": [],
+            "日本男歌手": [],
+            "日本女歌手": [],
+            "日本组合": [],
+            "韩国男歌手": [],
+            "韩国女歌手": [],
+            "韩国组合": [],
+          }
+        }
+      },
+      computed: {
+        filteredSinger() {
+          const query = this.searchQuery.trim().toLowerCase()
+          if (!query) return this.singer // 无搜索时返回原始数据
+
+          const filtered = {}
+          Object.entries(this.singer).forEach(([category, artists]) => {
+            const matched = artists.filter(a =>
+              a.name.toLowerCase().includes(query)
+            )
+            if (matched.length) filtered[category] = matched
+          })
+          return filtered
+        },
+        filteredSingerCount() {
+          return Object.values(this.filteredSinger)
+            .reduce((total, arr) => total + arr.length, 0)
         }
       },
       created() {
-        this.getData()
+        // this.getData()
+        this.initCategoryStates();
+        this.getAllSinger()
       },
       methods: {
+        initCategoryStates() {
+          const initialState = {};
+          Object.keys(this.singer).forEach(category => {
+            initialState[category] = false; // 默认展开
+          });
+          this.categoryStates = initialState;
+        },
+        toggleCategory(category) {
+          this.categoryStates[category] = !this.categoryStates[category];
+          // 兼容动态添加的分类
+          if (!this.singer[category]) {
+            Vue.set(this.singer, category, []);
+          }
+        },
         getData() {
           console.log('getdata');
           const _this = this
@@ -43,7 +147,46 @@
           }).then(res => {
             console.log(res.data)
             _this.songs = res.data.data
+           //保留两位小数
+            _this.size = parseFloat((res.data.size/1073741824).toFixed(2))
+            _this.maxSize = parseFloat((res.data.maxSize/1073741824).toFixed(2))
           })
+        },
+        getAllSinger() {
+          axios.get('https://fastly.jsdelivr.net/gh/Cinvin/cdn@latest/artist/top.json')
+            .then(res => {
+              if (Array.isArray(res.data)) {
+                const optionMap = {
+                  0: "热门",
+                  1: "华语男歌手",
+                  2: "华语女歌手",
+                  3: "华语组合",
+                  4: "欧美男歌手",
+                  5: "欧美女歌手",
+                  6: "欧美组合",
+                  7: "日本男歌手",
+                  8: "日本女歌手",
+                  9: "日本组合",
+                  10: "韩国男歌手",
+                  11: "韩国女歌手",
+                  12: "韩国组合"
+                }
+                res.data.forEach(artist => {
+                  const chineseCategory = optionMap[artist.categroy] || '其他';
+                  // 动态添加未定义分类的状态
+                  if (!this.categoryStates.hasOwnProperty(chineseCategory)) {
+                    Vue.set(this.categoryStates, chineseCategory, true);
+                  }
+                  if (this.singer[chineseCategory]) {
+                    this.singer[chineseCategory].push(artist);
+                  }
+                });
+              }
+              console.log(this.singer)
+            })
+        },
+        showArtistDetail(id) {
+          console.log("11111----"+id)
         }
       }
     }).mount('#app')
@@ -94,6 +237,170 @@
       })
     }
   </script>
+
+  <style>
+      /* 搜索框样式 */
+      .search-box {
+          position: relative;
+          margin: 20px 0;
+          max-width: 400px;
+      }
+
+      .search-input {
+          width: 100%;
+          padding: 12px 40px 12px 16px;
+          border: 2px solid #e0e0e0;
+          border-radius: 24px;
+          font-size: 16px;
+          transition: all 0.3s;
+      }
+
+      .search-input:focus {
+          border-color: #42b983;
+          box-shadow: 0 2px 8px rgba(66, 185, 131, 0.1);
+          outline: none;
+      }
+
+      .clear-btn {
+          position: absolute;
+          right: 16px;
+          top: 50%;
+          transform: translateY(-50%);
+          cursor: pointer;
+          font-size: 20px;
+          color: #999;
+          padding: 0 8px;
+      }
+
+      .clear-btn:hover {
+          color: #666;
+      }
+
+      /* 空状态提示 */
+      .empty-tips {
+          padding: 40px;
+          text-align: center;
+          color: #999;
+          font-size: 16px;
+      }
+      /* 新增折叠相关样式 */
+      .category-title {
+          cursor: pointer;
+          user-select: none;
+          transition: all 0.3s;
+          padding-right: 30px;
+          position: relative;
+      }
+
+      .category-title:hover {
+          background: #f8f9fa;
+      }
+
+      .toggle-icon {
+          position: absolute;
+          right: 12px;
+          top: 50%;
+          transform: translateY(-50%);
+          transition: transform 0.3s;
+          font-size: 0.8em;
+      }
+
+      .is-collapsed .toggle-icon {
+          transform: translateY(-50%) rotate(-90deg);
+      }
+
+      /* 折叠动画 */
+      .slide-enter-active,
+      .slide-leave-active {
+          transition: all 0.3s ease;
+          max-height: 5000px; /* 根据实际内容高度调整 */
+          overflow: hidden;
+      }
+
+      .slide-enter-from,
+      .slide-leave-to {
+          opacity: 0;
+          max-height: 0;
+          transform: translateY(-10px);
+      }
+
+      /* 分类标题样式 */
+      .category-title {
+          color: #2c3e50;
+          border-left: 4px solid #42b983;
+          padding-left: 12px;
+          margin: 24px 0 16px;
+      }
+
+      /* 响应式网格布局 */
+      .artist-grid {
+          display: grid;
+          gap: 16px;
+          grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      }
+
+      /* 卡片样式 */
+      .artist-card {
+          background: #fff;
+          border-radius: 8px;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+          padding: 16px;
+          transition: transform 0.2s;
+      }
+
+      .artist-card:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      }
+
+      /* 卡片内部布局 */
+      .card-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 12px;
+      }
+
+      .artist-name {
+          font-weight: 600;
+          font-size: 1.1em;
+          color: #34495e;
+      }
+
+      .song-count {
+          background: #f0f4f8;
+          color: #7f8c8d;
+          padding: 4px 8px;
+          border-radius: 12px;
+          font-size: 0.9em;
+      }
+
+      .size-info {
+          display: flex;
+          align-items: center;
+          color: #42b983;
+          font-weight: 500;
+      }
+
+      .icon-disk {
+          display: inline-block;
+          width: 20px;
+          height: 20px;
+          margin-right: 8px;
+          background: url('data:image/svg+xml;utf8,<svg viewBox="0 0 24 24" fill="%2342b983" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm0 6c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>');
+      }
+
+      /* 移动端适配 */
+      @media (max-width: 768px) {
+          .artist-grid {
+              grid-template-columns: 1fr;
+          }
+
+          .category-title {
+              font-size: 1.2em;
+          }
+      }
+  </style>
 </body>
 
 </html>
